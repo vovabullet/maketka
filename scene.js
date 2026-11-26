@@ -142,11 +142,19 @@ piece(box(2.4, 1.0, 1.8), C.walnut2, -1.0, 0.66 + 0.5, -0.3 + 3.0 - 1.6, t, { sp
 // trees
 const trunkGeo = new THREE.CylinderGeometry(0.035, 0.05, 0.55, 6);
 const crownGeo = new THREE.IcosahedronGeometry(0.34, 0);
+const groundY = (x, z) => {
+  let y = 0.66;
+  terr.forEach(([w, d], i) => {
+    const cx = -3.4 + i * 0.22, cz = -2.3 + i * 0.14;
+    if (Math.abs(x - cx) < w / 2 - 0.12 && Math.abs(z - cz) < d / 2 - 0.12) y = 0.88 + i * 0.22;
+  });
+  return y;
+};
 const treeSpots = [
-  [-5.4, 1.88, -3.6], [-4.4, 1.66, -1.4], [-2.4, 1.66, -3.3], [-5.9, 0.88, -0.2], [-1.8, 1.22, -0.9],
-  [-5.6, 0.66, 2.2], [-6.2, 0.66, 4.0], [-4.6, 0.66, 4.2], [-2.0, 0.66, 4.3],
-  [0.8, 0.66, 4.2], [3.2, 0.66, 4.3], [5.6, 0.66, 4.2], [6.2, 0.66, 3.0], [6.3, 0.66, -3.6], [4.5, 0.66, -4.1], [-0.2, 0.66, -4.2],
-];
+  [-5.4, -3.6], [-4.4, -1.4], [-2.6, -3.0], [-5.9, -0.2], [-1.8, -0.9], [-3.6, -2.4],
+  [-5.6, 2.2], [-6.2, 4.0], [-4.6, 4.2], [-2.0, 4.3],
+  [0.8, 4.2], [3.2, 4.3], [5.6, 4.2], [6.2, 2.6], [6.3, -3.6], [4.5, -4.1], [-0.2, -4.2],
+].map(([x, z]) => [x, groundY(x, z), z]);
 treeSpots.forEach(([x, y, z]) => {
   const s = 0.8 + Math.random() * 0.5;
   piece(trunkGeo, C.trunk, x, y + 0.275 * s, z, t, { spread: 1, dur: 1.1, edgeAlpha: 0 }).mesh.scale.setScalar(s);
@@ -162,8 +170,12 @@ label.textContent = `Сборка ${pad(0)} / ${pad(total)}`;
 const easeOut = x => 1 - Math.pow(1 - x, 4);
 const easeAlpha = x => Math.min(1, x / 0.35);
 
+let lastW = 0, lastH = 0;
 function resize() {
-  const w = innerWidth, h = innerHeight;
+  const host = canvas.parentElement;
+  const w = host.clientWidth, h = host.clientHeight;
+  if (w === lastW && h === lastH) return;
+  lastW = w; lastH = h;
   renderer.setSize(w, h, false);
   camera.aspect = w / h;
   const mobile = w < 760;

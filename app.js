@@ -17,7 +17,7 @@
     if (!el) return;
     e.preventDefault();
     closeMenu();
-    if (a.dataset.type) { const sel = $('#f-type'); if (sel) sel.value = a.dataset.type; }
+    if (a.dataset.type) { const sel = $('#f-type'); if (sel) { sel.value = a.dataset.type; sel.dispatchEvent(new Event('change')); } }
     if (a.closest('.modal')) closeModal();
     if (lenis) lenis.scrollTo(id === '#top' ? 0 : el, { duration: 1.6 });
     else el.scrollIntoView({ behavior: 'smooth' });
@@ -36,29 +36,36 @@
 
   /* Hero fade + nav + parallax */
   const stage = $('#heroStage'), shade = $('#heroShade'), content = $('#heroContent'), nav = $('#nav');
+  // Stable viewport height: ignore mobile address-bar jitter, update only on width/orientation change
+  let vh = innerHeight, vw = innerWidth;
+  const setVH = () => { document.documentElement.style.setProperty('--stage-h', vh + 'px'); };
+  setVH();
+  addEventListener('resize', () => {
+    if (innerWidth !== vw || Math.abs(innerHeight - vh) > 160) { vw = innerWidth; vh = innerHeight; setVH(); onScroll(); }
+  });
   let lastY = 0;
   window.heroProgress = 0;
   function onScroll() {
-    const y = window.scrollY, vh = window.innerHeight;
-    const p = Math.min(1, Math.max(0, y / (vh * 0.9)));
+    const y = window.scrollY;
+    const p = Math.min(1, Math.max(0, y / (vh * 0.85)));
     window.heroProgress = p;
     const e = p * p * (3 - 2 * p);
-    shade.style.opacity = (e * 0.92).toFixed(3);
-    stage.style.opacity = (1 - Math.pow(p, 2.2)).toFixed(3);
-    stage.style.transform = `scale(${1 + e * 0.06}) translateY(${-e * 4}vh)`;
+    shade.style.opacity = e.toFixed(3);
+    document.documentElement.style.setProperty('--edge', Math.min(1, p * 2.5).toFixed(3));
+    stage.style.opacity = (1 - Math.pow(p, 2.4)).toFixed(3);
+    stage.style.transform = reduce ? 'none' : `translate3d(0, ${(-y * (vw < 760 ? 0.55 : 0.32)).toFixed(1)}px, 0) scale(${(1 + e * 0.04).toFixed(4)})`;
     stage.style.visibility = p >= 1 ? 'hidden' : 'visible';
-    content.style.opacity = Math.max(0, 1 - p * 1.7).toFixed(3);
-    content.style.transform = `translateY(${-p * 90}px)`;
+    content.style.opacity = Math.max(0, 1 - p * (vw < 760 ? 2.8 : 2.1)).toFixed(3);
+    content.style.transform = `translate3d(0, ${(-p * 40).toFixed(1)}px, 0)`;
 
     const dark = y > vh * 0.6 || menu.classList.contains('is-open');
     nav.classList.toggle('is-dark', dark);
     nav.classList.toggle('is-hidden', y > vh * 1.2 && y > lastY + 2 && !menu.classList.contains('is-open'));
     if (y < lastY - 2) nav.classList.remove('is-hidden');
     lastY = y;
-
   }
-  if (lenis) lenis.on('scroll', onScroll); else addEventListener('scroll', onScroll, { passive: true });
-  addEventListener('resize', onScroll);
+  addEventListener('scroll', onScroll, { passive: true });
+  if (lenis) lenis.on('scroll', onScroll);
   onScroll();
 
   /* Reveal */
@@ -120,20 +127,65 @@
     $('#mVisual').innerHTML = window.projectSVG(p.svgType);
     $('#mOrder').dataset.type = p.category;
     lastFocus = document.activeElement;
+    $('.modal-panel', modal).scrollTop = 0;
+    modal.scrollTop = 0;
     modal.classList.add('open'); modal.setAttribute('aria-hidden', 'false');
+    document.documentElement.classList.add('modal-lock');
     lenis && lenis.stop();
     $('#mClose').focus({ preventScroll: true });
   }
   function closeModal() {
     if (!modal.classList.contains('open')) return;
     modal.classList.remove('open'); modal.setAttribute('aria-hidden', 'true');
+    document.documentElement.classList.remove('modal-lock');
     lenis && lenis.start();
     lastFocus && lastFocus.focus({ preventScroll: true });
   }
   cards.addEventListener('click', e => { const c = e.target.closest('.card'); if (c) openModal(c.dataset.id); });
   $('#mClose').addEventListener('click', closeModal);
   modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
-  addEventListener('keydown', e => { if (e.key === 'Escape') { closeModal(); closeMenu(); } });
+  addEventListener('keydown', e => { if (e.key === 'Escape') { if (document.querySelector('.dd.open')) return; closeModal(); closeMenu(); } });
+
+  /* Custom dropdowns */
+  const dds = [];
+  $$('.field.select select').forEach(sel => {
+    const field = sel.closest('.field');
+    const dd = document.createElement('div');
+    dd.className = 'dd';
+    const id = sel.id + '-list';
+    dd.innerHTML = `<button type="button" class="dd-btn" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="${sel.id}-lbl ${sel.id}-val"><span class="dd-val" id="${sel.id}-val"></span><span class="dd-ico" aria-hidden="true"></span></button>
+      <ul class="dd-list" role="listbox" id="${id}" tabindex="-1">${[...sel.options].map((o, k) => `<li role="option" data-i="${k}" id="${sel.id}-o${k}">${o.textContent}</li>`).join('')}</ul>`;
+    field.classList.add('has-dd');
+    $('label', field).id = sel.id + '-lbl';
+    sel.after(dd);
+    sel.tabIndex = -1; sel.setAttribute('aria-hidden', 'true');
+    const btn = $('.dd-btn', dd), val = $('.dd-val', dd), list = $('.dd-list', dd), items = $$('li', list);
+    let hi = sel.selectedIndex;
+    const sync = () => {
+      val.textContent = sel.options[sel.selectedIndex].textContent;
+      items.forEach((li, k) => li.setAttribute('aria-selected', String(k === sel.selectedIndex)));
+    };
+    const highlight = k => { hi = (k + items.length) % items.length; items.forEach((li, j) => li.classList.toggle('hi', j === hi)); list.setAttribute('aria-activedescendant', items[hi].id); };
+    const open = () => { dds.forEach(d => d !== close && d()); dd.classList.add('open'); field.classList.add('focus'); btn.setAttribute('aria-expanded', 'true'); highlight(sel.selectedIndex); };
+    const close = () => { dd.classList.remove('open'); field.classList.remove('focus'); btn.setAttribute('aria-expanded', 'false'); };
+    const choose = k => { sel.selectedIndex = k; sel.dispatchEvent(new Event('change')); close(); btn.focus({ preventScroll: true }); };
+    dds.push(close);
+    btn.addEventListener('click', () => dd.classList.contains('open') ? close() : open());
+    items.forEach((li, k) => {
+      li.addEventListener('click', () => choose(k));
+      li.addEventListener('mouseenter', () => highlight(k));
+    });
+    btn.addEventListener('keydown', e => {
+      const isOpen = dd.classList.contains('open');
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (!isOpen) open(); else highlight(hi + (e.key === 'ArrowDown' ? 1 : -1)); }
+      else if ((e.key === 'Enter' || e.key === ' ') && isOpen) { e.preventDefault(); choose(hi); }
+      else if (e.key === 'Escape' && isOpen) { e.preventDefault(); close(); }
+      else if (e.key === 'Tab') close();
+    });
+    sel.addEventListener('change', sync);
+    sync();
+  });
+  document.addEventListener('click', e => { if (!e.target.closest('.dd')) dds.forEach(c => c()); });
 
   /* Form */
   const form = $('#form'), errBox = $('#formError');
@@ -155,5 +207,5 @@
       btn.classList.remove('loading'); $('span', btn).textContent = 'Отправить запрос на расчёт';
     }, 900);
   });
-  $('#formReset').addEventListener('click', () => { form.reset(); form.classList.remove('is-done'); });
+  $('#formReset').addEventListener('click', () => { form.reset(); $$('.field.select select').forEach(x => x.dispatchEvent(new Event('change'))); form.classList.remove('is-done'); });
 })();
